@@ -783,7 +783,7 @@ class LSTMAttentionDecodeFeedbackLayer(MergeLayer):
             raise ValueError("Input sequence length cannot be specified as "
                              "None when unroll_scan is True")
 
-        num_inputs = np.prod(self.input_shape[2:])
+        num_inputs = np.prod(input_shape[2:])
         self.num_inputs = num_inputs
         # Initialize parameters using the supplied args
         #self.W_in_to_ingate = self.add_param(
