@@ -38,7 +38,7 @@ import lasagne
 #
 
 
-class LSTMAttentionDecodeLayer(Layer):
+class LSTMAttentionDecodeLayer(MergeLayer):
     r"""A long short-term memory (LSTM) layer.
 
     Includes optional "peephole connections" and a forget gate.  Based on the
@@ -188,11 +188,18 @@ class LSTMAttentionDecodeLayer(Layer):
                  gradient_steps=-1,
                  grad_clipping=False,
                  unroll_scan=False,
+                 mask_input=None,
                  #precompute_input=True,
                  **kwargs):
 
         # Initialize parent layer
-        super(LSTMAttentionDecodeLayer, self).__init__(incoming, **kwargs)
+        # This layer inherits from a MergeLayer, because it can have two
+        # inputs - the layer input, and the mask.  We will just provide the
+        # layer input as incomings, unless a mask input was provided.
+        incomings = [incoming]
+        if mask_input is not None:
+            incomings.append(mask_input)
+        super(LSTMAttentionDecodeLayer, self).__init__(incomings, **kwargs)
 
         # For any of the nonlinearities, if None is supplied, use identity
         if nonlinearity_ingate is None:
@@ -231,9 +238,11 @@ class LSTMAttentionDecodeLayer(Layer):
         self.aln_num_units = aln_num_units
         self.nonlinearity_align = nonlinearity_align
 
-        if unroll_scan and gradient_steps != -1:
-            raise ValueError(
-                "Gradient steps must be -1 when unroll_scan is true.")
+        # Retrieve the dimensionality of the incoming layer
+        input_shape = self.input_shapes[0]
+        if unroll_scan and input_shape[1] is None:
+            raise ValueError("Input sequence length cannot be specified as "
+                             "None when unroll_scan is True")
 
         num_inputs = np.prod(self.input_shape[2:])
 
@@ -338,10 +347,11 @@ class LSTMAttentionDecodeLayer(Layer):
                 hid_init, (1, self.num_units), name="hid_init",
                 trainable=learn_init, regularizable=False)
 
-    def get_output_shape_for(self, input_shape):
+    def get_output_shape_for(self, input_shapes):
+        input_shape = input_shapes[0]
         return input_shape[0], None, self.num_units
 
-    def get_output_for(self, input, mask=None, **kwargs):
+    def get_output_for(self, inputs, **kwargs):
         """
         Compute this layer's output function given a symbolic input variable
 
@@ -363,7 +373,12 @@ class LSTMAttentionDecodeLayer(Layer):
         layer_output : theano.TensorType
             Symblic output variable.
         """
+        input = inputs[0]
+        # Retrieve the mask when it is supplied
+        mask = inputs[1] if len(inputs) > 1 else None
+
         # Treat all dimensions after the second as flattened feature dimensions
+        # Retrieve the layer input
         if input.ndim > 3:
             input = input.reshape((input.shape[0], input.shape[1],
                                    T.prod(input.shape[2:])))
@@ -557,7 +572,7 @@ class LSTMAttentionDecodeLayer(Layer):
 
 
 
-class LSTMAttentionDecodeFeedbackLayer(Layer):
+class LSTMAttentionDecodeFeedbackLayer(MergeLayer):
     r"""A long short-term memory (LSTM) layer.
 
     Includes optional "peephole connections" and a forget gate.  Based on the
@@ -712,10 +727,15 @@ class LSTMAttentionDecodeFeedbackLayer(Layer):
                  #precompute_input=True,
                  decode_pre_steps=0,
                  return_decodehid=False,
+                 mask_input=None,
                  **kwargs):
 
         # Initialize parent layer
-        super(LSTMAttentionDecodeFeedbackLayer, self).__init__(incoming, **kwargs)
+        incomings = [incoming]
+        if mask_input is not None:
+            incomings.append(mask_input)
+        super(LSTMAttentionDecodeFeedbackLayer, self).__init__(
+            incomings, **kwargs)
 
         # For any of the nonlinearities, if None is supplied, use identity
         if nonlinearity_ingate is None:
@@ -758,9 +778,10 @@ class LSTMAttentionDecodeFeedbackLayer(Layer):
         self.decode_pre_steps = decode_pre_steps
         self.return_decodehid = return_decodehid
 
-        if unroll_scan and gradient_steps != -1:
-            raise ValueError(
-                "Gradient steps must be -1 when unroll_scan is true.")
+        input_shape = self.input_shapes[0]
+        if unroll_scan and input_shape[1] is None:
+            raise ValueError("Input sequence length cannot be specified as "
+                             "None when unroll_scan is True")
 
         num_inputs = np.prod(self.input_shape[2:])
         self.num_inputs = num_inputs
@@ -886,8 +907,8 @@ class LSTMAttentionDecodeFeedbackLayer(Layer):
                 hid_init, (1, self.num_units), name="hid_init",
                 trainable=learn_init, regularizable=False)
 
-
     def get_output_shape_for(self, input_shape):
+        input_shape = input_shapes[0]
         return input_shape[0], None, self.num_units
 
     def get_params(self, **tags):
@@ -896,8 +917,7 @@ class LSTMAttentionDecodeFeedbackLayer(Layer):
         # Combine with all parameters from the child layers
         return params
 
-
-    def get_output_for(self, input, mask=None, **kwargs):
+    def get_output_for(self, inputs, **kwargs):
         """
         Compute this layer's output function given a symbolic input variable
 
@@ -919,6 +939,10 @@ class LSTMAttentionDecodeFeedbackLayer(Layer):
         layer_output : theano.TensorType
             Symblic output variable.
         """
+        input = inputs[0]
+        # Retrieve the mask when it is supplied
+        mask = inputs[1] if len(inputs) > 1 else None
+
         # Treat all dimensions after the second as flattened feature dimensions
         if input.ndim > 3:
             input = input.reshape((input.shape[0], input.shape[1],
